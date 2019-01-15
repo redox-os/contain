@@ -1,5 +1,5 @@
 use syscall;
-use syscall::data::{Stat, StatVfs};
+use syscall::data::{Map, Stat, StatVfs};
 use syscall::error::{Error, EBADF, EINVAL, EPERM, Result};
 use syscall::scheme::Scheme;
 
@@ -125,7 +125,7 @@ impl Scheme for ChrootScheme {
         Err(Error::new(EBADF))
     }
 
-    fn fmap(&self, _id: usize, _offset: usize, _size: usize) -> Result<usize> {
+    fn fmap(&self, _id: usize, _map: &Map) -> Result<usize> {
         //TODO
         Err(Error::new(EBADF))
     }
