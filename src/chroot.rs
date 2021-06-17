@@ -1,6 +1,7 @@
 use syscall;
 use syscall::data::{Map, Stat, StatVfs};
 use syscall::error::{Error, EBADF, EINVAL, EPERM, Result};
+use syscall::flag::EventFlags;
 use syscall::scheme::Scheme;
 
 use std::str;
@@ -17,8 +18,7 @@ impl ChrootScheme {
         }
     }
 
-    fn translate(&self, path: &[u8]) -> Result<String> {
-        let path = str::from_utf8(path).or(Err(Error::new(EINVAL)))?;
+    fn translate(&self, path: &str) -> Result<String> {
         let mut translated = self.root.clone();
         translated.push(path.trim_left_matches('/'));
         if translated.starts_with(&self.root) {
@@ -31,7 +31,7 @@ impl ChrootScheme {
 }
 
 impl Scheme for ChrootScheme {
-    fn open(&self, path: &[u8], flags: usize, uid: u32, gid: u32) -> Result<usize> {
+    fn open(&self, path: &str, flags: usize, uid: u32, gid: u32) -> Result<usize> {
         if uid != 0 {
             syscall::setreuid(0, uid as usize)?;
         }
@@ -48,14 +48,17 @@ impl Scheme for ChrootScheme {
         res
     }
 
-    fn chmod(&self, path: &[u8], mode: u16, uid: u32, gid: u32) -> Result<usize> {
+    fn chmod(&self, path: &str, mode: u16, uid: u32, gid: u32) -> Result<usize> {
         if uid != 0 {
             syscall::setreuid(0, uid as usize)?;
         }
         if gid != 0 {
             syscall::setregid(0, gid as usize)?;
         }
+
+        #[allow(deprecated)]
         let res = syscall::chmod(&self.translate(path)?, mode as usize);
+
         if uid != 0 {
             syscall::setreuid(0, 0).unwrap();
         }
@@ -65,7 +68,7 @@ impl Scheme for ChrootScheme {
         res
     }
 
-    fn rmdir(&self, path: &[u8], uid: u32, gid: u32) -> Result<usize> {
+    fn rmdir(&self, path: &str, uid: u32, gid: u32) -> Result<usize> {
         if uid != 0 {
             syscall::setreuid(0, uid as usize)?;
         }
@@ -82,7 +85,7 @@ impl Scheme for ChrootScheme {
         res
     }
 
-    fn unlink(&self, path: &[u8], uid: u32, gid: u32) -> Result<usize> {
+    fn unlink(&self, path: &str, uid: u32, gid: u32) -> Result<usize> {
         if uid != 0 {
             syscall::setreuid(0, uid as usize)?;
         }
@@ -112,15 +115,15 @@ impl Scheme for ChrootScheme {
         syscall::write(id, buf)
     }
 
-    fn seek(&self, id: usize, pos: usize, whence: usize) -> Result<usize> {
-        syscall::lseek(id, pos as isize, whence)
+    fn seek(&self, id: usize, pos: isize, whence: usize) -> Result<isize> {
+        syscall::lseek(id, pos, whence).map(|res| res as isize)
     }
 
     fn fcntl(&self, id: usize, cmd: usize, arg: usize) -> Result<usize> {
         syscall::fcntl(id, cmd, arg)
     }
 
-    fn fevent(&self, _id: usize, _flags: usize) -> Result<usize> {
+    fn fevent(&self, _id: usize, _flags: EventFlags) -> Result<EventFlags> {
         //TODO
         Err(Error::new(EBADF))
     }

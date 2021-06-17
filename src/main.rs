@@ -1,12 +1,13 @@
 extern crate syscall;
 
-use syscall::scheme::Scheme;
-
 use std::{env, fs,thread};
 use std::io::{stderr, Write};
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{self, Command};
+
+use syscall::flag::{CloneFlags, WaitFlags};
+use syscall::scheme::Scheme;
 
 use self::chroot::ChrootScheme;
 
@@ -51,7 +52,7 @@ fn enter(root: &Path, cmd: &str, args: &[String]) {
         let _ = syscall::close(scheme_fd);
     });
 
-    let pid = unsafe { syscall::clone(0).unwrap() };
+    let pid = unsafe { syscall::clone(CloneFlags::empty()).unwrap() };
     if pid == 0 {
         syscall::setrens(new_ns, new_ns).unwrap();
 
@@ -68,7 +69,7 @@ fn enter(root: &Path, cmd: &str, args: &[String]) {
         panic!("contain: failed to launch {}: {}", cmd, err);
     } else {
         let mut status = 0;
-        syscall::waitpid(pid, &mut status, 0).unwrap();
+        syscall::waitpid(pid, &mut status, WaitFlags::empty()).unwrap();
 
         loop {
             let mut c_status = 0;
