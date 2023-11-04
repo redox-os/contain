@@ -1,10 +1,9 @@
 extern crate syscall;
 
-use std::{env, fs,thread};
-use std::io::{stderr, Write};
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{self, Command};
+use std::{env, fs, thread};
 
 use syscall::flag::{CloneFlags, WaitFlags};
 use syscall::scheme::Scheme;
@@ -14,17 +13,12 @@ use self::chroot::ChrootScheme;
 mod chroot;
 
 fn usage() -> ! {
-    write!(stderr(), "contain root cmd args..\n").unwrap();
+    eprintln!("contain root cmd args..");
     process::exit(1);
 }
 
 fn enter(root: &Path, cmd: &str, args: &[String]) {
-    let names = [
-        "pty",
-        "rand",
-        "tcp",
-        "udp"
-    ];
+    let names = ["pty", "rand", "tcp", "udp"];
 
     let mut name_ptrs = Vec::new();
     for name in names.iter() {
@@ -34,9 +28,14 @@ fn enter(root: &Path, cmd: &str, args: &[String]) {
     let new_ns = syscall::mkns(&name_ptrs).unwrap();
 
     let root_canon = fs::canonicalize(root).unwrap();
-    let root_thread = thread::spawn(move || {
+
+    let _root_thread = thread::spawn(move || {
         syscall::setrens(-1isize as usize, new_ns).unwrap();
-        let scheme_fd = syscall::open(":file", syscall::O_CREAT | syscall::O_RDWR | syscall::O_CLOEXEC).unwrap();
+        let scheme_fd = syscall::open(
+            ":file",
+            syscall::O_CREAT | syscall::O_RDWR | syscall::O_CLOEXEC,
+        )
+        .unwrap();
         syscall::setrens(-1isize as usize, syscall::getns().unwrap()).unwrap();
 
         let chroot_scheme = ChrootScheme::new(root_canon);
@@ -58,9 +57,9 @@ fn enter(root: &Path, cmd: &str, args: &[String]) {
 
         println!("Container {}: enter: {}", new_ns, cmd);
 
-        let mut command = Command::new(&cmd);
+        let mut command = Command::new(cmd);
         for arg in args {
-            command.arg(&arg);
+            command.arg(arg);
         }
         command.current_dir("/");
 
