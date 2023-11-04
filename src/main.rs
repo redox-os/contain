@@ -17,17 +17,22 @@ fn usage() -> ! {
     process::exit(1);
 }
 
-fn enter(root: &Path, cmd: &str, args: &[String]) {
-    let names = ["pty", "rand", "tcp", "udp"];
+fn new_namespace() -> usize {
+    const INITIAL_SCHEMES_COUNT: usize = 4;
+    const INITIAL_SCHEMES: [&str; INITIAL_SCHEMES_COUNT] = ["pty", "rand", "tcp", "udp"];
 
-    let mut name_ptrs = Vec::new();
-    for name in names.iter() {
-        name_ptrs.push([name.as_ptr() as usize, name.len()]);
+    let mut name_ptrs: [[usize; 2]; INITIAL_SCHEMES_COUNT] = Default::default();
+    for (index, name) in INITIAL_SCHEMES.iter().enumerate() {
+        name_ptrs[index] = [name.as_ptr() as usize, name.len()]
     }
 
-    let new_ns = syscall::mkns(&name_ptrs).unwrap();
+    syscall::mkns(&name_ptrs).unwrap()
+}
 
+fn enter(root: &Path, cmd: &str, args: &[String]) {
     let root_canon = fs::canonicalize(root).unwrap();
+
+    let new_ns = new_namespace();
 
     let _root_thread = thread::spawn(move || {
         syscall::setrens(-1isize as usize, new_ns).unwrap();
