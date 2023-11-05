@@ -1,28 +1,28 @@
-use syscall;
 use syscall::data::{Map, Stat, StatVfs};
-use syscall::error::{Error, EBADF, EINVAL, EPERM, Result};
+use syscall::error::{Error, Result, EBADF, EINVAL, EPERM};
 use syscall::flag::EventFlags;
 use syscall::scheme::Scheme;
 
-use std::str;
 use std::path::PathBuf;
+use std::str;
 
 pub struct ChrootScheme {
-    root: PathBuf
+    root: PathBuf,
 }
 
 impl ChrootScheme {
-    pub fn new(root: PathBuf) -> ChrootScheme {
-        ChrootScheme {
-            root: root
-        }
+    pub fn new(root: PathBuf) -> Self {
+        Self { root }
     }
 
     fn translate(&self, path: &str) -> Result<String> {
         let mut translated = self.root.clone();
-        translated.push(path.trim_left_matches('/'));
+        translated.push(path.trim_start_matches('/'));
         if translated.starts_with(&self.root) {
-            translated.into_os_string().into_string().or(Err(Error::new(EINVAL)))
+            translated
+                .into_os_string()
+                .into_string()
+                .or(Err(Error::new(EINVAL)))
         } else {
             println!("escaped chroot");
             Err(Error::new(EPERM))
@@ -38,7 +38,7 @@ impl Scheme for ChrootScheme {
         if gid != 0 {
             syscall::setregid(0, gid as usize)?;
         }
-        let res = syscall::open(&self.translate(path)?, flags);
+        let res = syscall::open(self.translate(path)?, flags);
         if uid != 0 {
             syscall::setreuid(0, 0).unwrap();
         }
@@ -57,7 +57,7 @@ impl Scheme for ChrootScheme {
         }
 
         #[allow(deprecated)]
-        let res = syscall::chmod(&self.translate(path)?, mode as usize);
+        let res = syscall::chmod(self.translate(path)?, mode as usize);
 
         if uid != 0 {
             syscall::setreuid(0, 0).unwrap();
@@ -75,7 +75,7 @@ impl Scheme for ChrootScheme {
         if gid != 0 {
             syscall::setregid(0, gid as usize)?;
         }
-        let res = syscall::rmdir(&self.translate(path)?);
+        let res = syscall::rmdir(self.translate(path)?);
         if uid != 0 {
             syscall::setreuid(0, 0).unwrap();
         }
@@ -92,7 +92,7 @@ impl Scheme for ChrootScheme {
         if gid != 0 {
             syscall::setregid(0, gid as usize)?;
         }
-        let res = syscall::unlink(&self.translate(path)?);
+        let res = syscall::unlink(self.translate(path)?);
         if uid != 0 {
             syscall::setreuid(0, 0).unwrap();
         }
@@ -137,9 +137,11 @@ impl Scheme for ChrootScheme {
         let count = syscall::fpath(id, buf)?;
 
         let translated = {
-            let path = str::from_utf8(&buf[.. count]).or(Err(Error::new(EINVAL)))?;
-            let translated = path.to_string().replace(self.root.to_str().ok_or(Error::new(EINVAL))?, "");
-            format!("file:{}", translated.trim_left_matches('/'))
+            let path = str::from_utf8(&buf[..count]).or(Err(Error::new(EINVAL)))?;
+            let translated = path
+                .to_string()
+                .replace(self.root.to_str().ok_or(Error::new(EINVAL))?, "");
+            format!("file:{}", translated.trim_start_matches('/'))
         };
 
         let path = translated.as_bytes();
