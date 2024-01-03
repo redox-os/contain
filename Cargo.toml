@@ -1,7 +1,29 @@
 [package]
 name = "contain"
-version = "0.1.0"
-edition = "2018"
+version = "0.2.0"
+authors = ["Ron Williams <ron.williams.redox@gmail.com>"]
+license = "MIT"
+edition = "2021"
+
+[lib]
+name = "contain"
+path = "src/lib.rs"
 
 [dependencies]
-redox_syscall = "0.2.12"
+clap = { version = "4.4.7", features = ["derive"] }
+redox_syscall = "0.4.1"
+libc = "0.2.150"
+libredox = { version = "0.0.3", features = ["scheme"] }
+redox_event = { git = "https://gitlab.redox-os.org/redox-os/event.git" }
+redox-log = "0.1.1"
+redox_users = "0.4.4"
+redox-scheme = { git = "https://gitlab.redox-os.org/redox-os/redox-scheme.git" }
+log = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+ron = "0.8.1"
+toml = "0.8.8"
+termion = "2.0.3"
+redox_liner = "0.5.2"
+orbclient = "0.3.47"
+orbfont = "0.1.12"
+orbimage = "0.1.17"

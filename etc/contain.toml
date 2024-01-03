@@ -1,0 +1,6 @@
+pass_schemes = ["rand", "null", "tcp", "udp", "thisproc", "pty", "orbital", "display.vesa"]
+sandbox_schemes = ["file"]
+files = ["file:/dev/null"]
+rofiles = ["file:/etc/passwd", "file:/etc/hostname", "file:/etc/localtime"]
+dirs = ["file:/tmp"]
+rodirs = ["file:/bin", "file:/ui"]
