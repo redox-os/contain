@@ -1,6 +1,6 @@
 [package]
 name = "contain"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Ron Williams <ron.williams.redox@gmail.com>"]
 license = "MIT"
 edition = "2021"
@@ -11,11 +11,11 @@ path = "src/lib.rs"
 
 [dependencies]
 clap = { version = "4.4.7", features = ["derive"] }
-redox_syscall = "0.4.1"
+redox_syscall = "0.5.16"
 libc = "0.2.150"
-libredox = { version = "0.0.3", features = ["scheme"] }
+libredox = { version = "0.1.10", features = ["mkns"] }
 redox_event = { git = "https://gitlab.redox-os.org/redox-os/event.git" }
-redox-log = "0.1.1"
+redox-log = "0.1.4"
 redox_users = "0.4.4"
 redox-scheme = { git = "https://gitlab.redox-os.org/redox-os/redox-scheme.git" }
 log = "0.4"
@@ -27,3 +27,4 @@ redox_liner = "0.5.2"
 orbclient = "0.3.47"
 orbfont = "0.1.12"
 orbimage = "0.1.17"
+ioslice = "0.6"
