@@ -23,7 +23,7 @@ pub enum ContainError {
     ParseError,
     ConfigError,
     IoError(std::io::Error),
-    SyscallError(libredox::error::Error),
+    SyscallError(syscall::Error),
     PoisonError,
     ThreadError,
 }

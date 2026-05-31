@@ -1,12 +1,10 @@
 use std::{
+    fs,
     os::unix::process::CommandExt,
     process::{exit, Command},
 };
 
 use libredox::call::waitpid;
-use libredox::error::{Error, EIO};
-use libredox::flag::O_RDONLY;
-use libredox::Fd;
 use log::{debug, error};
 
 use crate::{ContainConfig, ContainError, ContainResult, ContainThread, CONTAIN_EXEC_FAIL_EXIT};
@@ -46,29 +44,16 @@ pub fn run_contained(config: ContainConfig, command: Command) -> ContainResult<i
 
 /// List all schemes.
 fn list_schemes() -> ContainResult<Vec<String>> {
-    // get a list of all the schemes in the current namespace
-    let mut buf = [0; 4096];
-    let count = match Fd::open(":", O_RDONLY, 0) {
-        Ok(fd) => match fd.read(&mut buf) {
-            Ok(n) => n,
-            Err(e) => {
-                error!("Could not read root scheme");
-                return Err(ContainError::SyscallError(e));
-            }
-        },
-        Err(e) => {
-            error!("Could not open root scheme");
-            return Err(ContainError::SyscallError(e));
+    let mut scheme_names = Vec::new();
+
+    for entry_result in fs::read_dir(":").map_err(|e| ContainError::io_error(e))? {
+        let entry = entry_result.map_err(|e| ContainError::io_error(e))?;
+
+        if let Some(name_str) = entry.file_name().to_str() {
+            scheme_names.push(name_str.to_string());
         }
-    };
-    Ok(String::from_utf8(buf[0..count].to_vec())
-        .map_err(|_e| {
-            error!("Could not convert schemes to uft8");
-            ContainError::SyscallError(Error::new(EIO))
-        })?
-        .split_ascii_whitespace()
-        .map(|s| s.to_string())
-        .collect())
+    }
+    Ok(scheme_names)
 }
 
 /// Validate the config.
@@ -158,9 +143,9 @@ pub fn run_in_namespace(mut command: Command, namespace: usize) -> ContainResult
     }
     let pid = pid as usize;
     if pid == 0 {
-        syscall::setrens(namespace, namespace).map_err(|e| {
+        libredox::call::setrens(namespace, namespace).map_err(|e| {
             error!("child failed to enter restricted namespace, {}", e);
-            ContainError::syscall_error(e)
+            ContainError::syscall_error(e.into())
         })?;
 
         let err = command.exec();
@@ -171,21 +156,21 @@ pub fn run_in_namespace(mut command: Command, namespace: usize) -> ContainResult
         let mut status = 0;
         let _ = waitpid(pid, &mut status, 0).map_err(|e| {
             error!("waitpid({}) returned error: {}", pid, e);
-            ContainError::syscall_error(e)
+            ContainError::syscall_error(e.into())
         })?;
 
-        loop {
-            let mut c_status = 0;
-            let c_pid = waitpid(0, &mut c_status, libc::WNOHANG).unwrap_or_else(|e| {
-                error!("waitpid(any) returned error: {}", e);
-                0
-            });
-            if c_pid == 0 {
-                break;
-            } else {
-                debug!("contain: container zombie {}: {:X}", c_pid, c_status);
-            }
-        }
+        // loop {
+        //     let mut c_status = 0;
+        //     let c_pid = waitpid(0, &mut c_status, libc::WNOHANG).unwrap_or_else(|e| {
+        //         error!("waitpid(any) returned error: {}", e);
+        //         0
+        //     });
+        //     if c_pid == 0 {
+        //         break;
+        //     } else {
+        //         debug!("contain: container zombie {}: {:X}", c_pid, c_status);
+        //     }
+        // }
 
         debug!(
             "contain: Container {}, pid {}: exit: {:X}",

@@ -150,7 +150,7 @@ pub fn main() {
             .map_err(|e| {
                 error!("could not read config from file {}: {}", CONFIG_FILE, e);
                 eprintln!("could not read config from file {}: {}", CONFIG_FILE, e);
-                let _ = syscall::exit(1);
+                let _ = std::process::exit(1);
             })
             .unwrap()
     };
@@ -200,7 +200,7 @@ pub fn main() {
     if contain_args.user.is_none() && contain_args.command.len() == 0 {
         error!("User was not specified and no command was provided.");
         eprintln!("User was not specified and no command was provided.");
-        let _ = syscall::exit(1);
+        let _ = std::process::exit(1);
     }
 
     let mut command = if !contain_args.command.is_empty() {
@@ -227,7 +227,7 @@ pub fn main() {
             .map_err(|e| {
                 error!("failed to get authenticator, {}", e);
                 eprintln!("failed to get authenticator, {}", e);
-                let _ = syscall::exit(1);
+                let _ = std::process::exit(1);
             })
             .unwrap();
         let user = all_users
@@ -235,7 +235,7 @@ pub fn main() {
             .ok_or_else(|| {
                 error!("could not get user {}", contain_args.user.as_ref().unwrap());
                 eprintln!("could not get user {}", contain_args.user.as_ref().unwrap());
-                let _ = syscall::exit(1);
+                let _ = std::process::exit(1);
             })
             .unwrap();
 

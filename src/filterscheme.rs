@@ -1,9 +1,11 @@
+use libc::{getgid, getuid};
 use libredox::errno::*;
 use libredox::flag::{O_CREAT, O_RDWR, O_WRONLY};
 use log::{debug, error};
-use redox_scheme::{CallerCtx, OpenResult, Scheme};
-use syscall::{rmdir, setregid, setreuid, unlink, Error, Result};
+use redox_scheme::{scheme::SchemeSync, CallerCtx, OpenResult};
+use syscall::{rmdir, unlink, Error, Result};
 
+use std::io;
 use std::path::Path;
 use std::str;
 use std::sync::{Arc, RwLock};
@@ -13,6 +15,55 @@ use crate::contain_config::ContainConfig;
 /// Filter paths to only include the specified items.
 /// Allow specified exact filename matches, regardless of types.
 /// Allow paths starting with any of the specified directories.
+
+struct IdGuard<const UID_NOT_GID: bool> {
+    original: u32,
+}
+
+impl<const UID_NOT_GID: bool> IdGuard<UID_NOT_GID> {
+    fn new(original: u32) -> Result<IdGuard<UID_NOT_GID>> {
+        Ok(Self { original })
+    }
+}
+
+impl<const UID_NOT_GID: bool> Drop for IdGuard<UID_NOT_GID> {
+    fn drop(&mut self) {
+        let res = if UID_NOT_GID {
+            setreuid(self.original, self.original)
+        } else {
+            setregid(self.original, self.original)
+        };
+        if res.is_err() {
+            if UID_NOT_GID {
+                error!("CRITICAL: Failed to restore UID. UID may be stuck as another user.",);
+            } else {
+                error!("CRITICAL: Failed to restore GID. GID may be stuck as another group.",);
+            }
+        }
+    }
+}
+
+fn setreuid(ruid: u32, euid: u32) -> Result<()> {
+    let res = unsafe { libc::setreuid(ruid, euid) };
+    if res < 0 {
+        Err(Error::new(
+            io::Error::last_os_error().raw_os_error().unwrap_or(EPERM),
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn setregid(rgid: u32, egid: u32) -> Result<()> {
+    let res = unsafe { libc::setregid(rgid, egid) };
+    if res < 0 {
+        Err(Error::new(
+            io::Error::last_os_error().raw_os_error().unwrap_or(EPERM),
+        ))
+    } else {
+        Ok(())
+    }
+}
 
 pub struct FilterScheme {
     pub scheme: String,
@@ -123,98 +174,67 @@ impl FilterScheme {
     }
 }
 
-impl Scheme for FilterScheme {
-    fn xopen(&self, path: &str, flags: usize, ctx: &CallerCtx) -> Result<OpenResult> {
-        debug!("xopen({}, {:X})", path, flags);
+fn with_id_guards<F, R>(ctx: &CallerCtx, f: F) -> Result<R>
+where
+    F: FnOnce() -> Result<R>,
+{
+    let original_gid = unsafe { getgid() };
+    let original_uid = unsafe { getuid() };
+    let _gid_guard = IdGuard::<false>::new(original_gid)?;
+    let _uid_guard = IdGuard::<true>::new(original_uid)?;
+
+    setregid(original_gid, ctx.gid as u32)?;
+    setreuid(original_uid, ctx.uid as u32)?;
+
+    f()
+}
+
+impl SchemeSync for FilterScheme {
+    fn open(&mut self, path: &str, flags: usize, ctx: &CallerCtx) -> Result<OpenResult> {
         let config = self.config.read().map_err(|e| {
-            error!("xopen could not get read lock: {}", e);
+            error!("open could not get read lock: {}", e);
             Error::new(ENOTRECOVERABLE)
         })?;
-        if ctx.gid != 0 {
-            setregid(0, ctx.gid as usize)?;
-        }
-        if ctx.uid != 0 {
-            let res = setreuid(0, ctx.uid as usize);
-            if res.is_err() {
-                if ctx.gid != 0 {
-                    let _ = setregid(0, 0);
-                }
-                return Err(res.unwrap_err());
-            }
-        }
-        let o_flags = (flags & 0xFFFF_0000) as i32;
-        let mode = (flags & 0x0000_FFFF) as u16;
-        let res = self
-            .resolve(&config, path, flags)
-            .and_then(|resolved| libredox::call::open(&resolved, o_flags, mode))
-            .map(|fd| OpenResult::OtherScheme { fd });
-        debug!("open({}), res={:?}", path, res.is_ok());
-        if ctx.uid != 0 {
-            let _ = setreuid(0, 0);
-        }
-        if ctx.gid != 0 {
-            let _ = setregid(0, 0);
-        }
-        res
+
+        with_id_guards(ctx, || {
+            let o_flags = (flags & 0xFFFF_0000) as i32;
+            let mode = (flags & 0x0000_FFFF) as u16;
+            let res = self
+                .resolve(&config, path, flags)
+                .and_then(|resolved| {
+                    libredox::call::open(&resolved, o_flags, mode).map_err(syscall::Error::from)
+                })
+                .map(|fd| OpenResult::OtherScheme { fd });
+            debug!("open({}), res={:?}", path, res.is_ok());
+            res
+        })
     }
 
-    fn rmdir(&self, path: &str, uid: u32, gid: u32) -> Result<usize> {
+    fn rmdir(&mut self, path: &str, ctx: &CallerCtx) -> Result<()> {
         debug!("rmdir({})", path);
         let config = self.config.read().map_err(|e| {
             error!("rmdir could not get read lock: {}", e);
             Error::new(ENOTRECOVERABLE)
         })?;
-        if gid != 0 {
-            setregid(0, gid as usize)?;
-        }
-        if uid != 0 {
-            let res = setreuid(0, uid as usize);
-            if res.is_err() {
-                if gid != 0 {
-                    let _ = setregid(0, 0);
-                }
-                return Err(res.unwrap_err());
-            }
-        }
-        let res = self
-            .resolve(&config, path, 0)
-            .and_then(|resolved| rmdir(resolved));
-        if uid != 0 {
-            setreuid(0, 0).unwrap();
-        }
-        if gid != 0 {
-            setregid(0, 0).unwrap();
-        }
-        res
+
+        with_id_guards(ctx, || {
+            self.resolve(&config, path, 0)
+                .and_then(|resolved| rmdir(resolved))
+                .map(|_| ())
+        })
     }
 
-    fn unlink(&self, path: &str, uid: u32, gid: u32) -> Result<usize> {
+    fn unlink(&mut self, path: &str, ctx: &CallerCtx) -> Result<()> {
         debug!("unlink({})", path);
         let config = self.config.read().map_err(|e| {
             error!("unlink could not get read lock: {}", e);
             Error::new(ENOTRECOVERABLE)
         })?;
-        if gid != 0 {
-            setregid(0, gid as usize)?;
-        }
-        if uid != 0 {
-            let res = setreuid(0, uid as usize);
-            if res.is_err() {
-                if gid != 0 {
-                    let _ = setregid(0, 0);
-                }
-                return Err(res.unwrap_err());
-            }
-        }
-        let res = self
-            .resolve(&config, path, 0)
-            .and_then(|resolved| unlink(resolved));
-        if uid != 0 {
-            setreuid(0, 0).unwrap();
-        }
-        if gid != 0 {
-            setregid(0, 0).unwrap();
-        }
-        res
+
+        with_id_guards(ctx, || {
+            self.resolve(&config, path, 0)
+                .and_then(|resolved| unlink(resolved))
+                .map(|_| ())
+        })
     }
 }
